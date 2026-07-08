@@ -3,3 +3,5 @@ uvicorn
 pydantic-settings
 python-dotenv
 langchain-groq
+langchain
+langgraph-checkpoint-postgres
