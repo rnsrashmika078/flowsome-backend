@@ -1,0 +1,45 @@
+# env files
+.env
+.env.*
+!.env.example
+
+# python cache
+__pycache__/
+*.pyc
+
+# virtual environments
+venv/
+.venv/
+env/
+
+# build files
+build/
+dist/
+*.egg-info/
+
+# logs
+*.log
+
+# database
+*.db
+*.sqlite3
+
+# test / coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# type check
+.mypy_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# secrets
+*.pem
+*.key
