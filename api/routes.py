@@ -1,11 +1,13 @@
 from fastapi import Request, APIRouter, Depends
 from schemas.models.user import UserResponse
 from schemas.services.lang.chatGroq import get_agent
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 from fastapi.responses import StreamingResponse
 from langchain_protocol import Command
 from langchain.agents import AgentState, create_agent
 import json
+
+from utils.helper import clean_object
 
 
 # path param : "/api/home/{id}"
@@ -25,10 +27,13 @@ async def home(request: Request):
 async def stream_response(request: Request, agent=Depends(get_agent)):
     try:
         body = await request.json()
+        print(body)
 
         payload = body.get("input", body)
         thread_id = payload.get("threadId", "chat123")
         interrupt_response = payload.get("interruptResponse")
+        messages = payload.get("messages", [])
+        content = messages[0].get("content", "")
 
         config = {
             "configurable": {
@@ -42,8 +47,7 @@ async def stream_response(request: Request, agent=Depends(get_agent)):
                 resume={"decisions": interrupt_response.get("decisions")}
             )
         else:
-            messages = payload.get("messages", [])
-            first_msg_content = messages[0].get("content", "") if messages else ""
+            first_msg_content = content if messages else ""
             input_data = {"messages": [HumanMessage(content=first_msg_content)]}
 
         async def generate():
@@ -51,39 +55,14 @@ async def stream_response(request: Request, agent=Depends(get_agent)):
                 async for stream_mode, data in agent.astream(
                     input_data,
                     config=config,
-                    stream_mode=["updates", "messages", "values", "tools", "custom"],
+                    stream_mode=[
+                        "updates",
+                        "messages",
+                        "values",
+                        "tools",
+                        "custom",
+                    ],
                 ):
-
-                    def clean_object(obj):
-                        if isinstance(obj, BaseMessage):
-                            data = {
-                                "type": obj.type,
-                                "content": obj.content,
-                                "id": getattr(obj, "id", None),
-                                "additional_kwargs": getattr(
-                                    obj, "additional_kwargs", {}
-                                ),
-                                "response_metadata": getattr(
-                                    obj, "response_metadata", {}
-                                ),
-                            }
-                            if isinstance(obj, ToolMessage):
-                                data["tool_call_id"] = obj.tool_call_id
-                                data["artifact"] = obj.artifact
-                            if isinstance(obj, AIMessage):
-                                data["tool_calls"] = obj.tool_calls
-                            return data
-
-                        elif hasattr(obj, "model_dump"):
-                            return obj.model_dump()
-
-                        elif isinstance(obj, dict):
-                            return {k: clean_object(v) for k, v in obj.items()}
-                        elif isinstance(obj, (list, tuple)):
-                            return [clean_object(item) for item in obj]
-
-                        return obj
-
                     formatted_data = clean_object(data)
 
                     yield f"event: {stream_mode}\n"
