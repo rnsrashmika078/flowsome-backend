@@ -6,14 +6,14 @@ from langchain.agents import create_agent
 from core.config import settings
 from fastapi import Depends
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from ..middleware.customMiddlewares import welcome_back_message
+from ..middleware.customMiddlewares import welcome_back_message, trim_joined_messages
 
 llm = ChatGroq(
     api_key=settings.groq_api_key,
     model=settings.chat_model,
     temperature=0,
     max_tokens=None,
-    reasoning_format="parsed",
+    # reasoning_format="parsed",
     timeout=None,
     max_retries=2,
 )
@@ -28,8 +28,8 @@ async def get_agent():
         agent = create_agent(
             model=llm,
             tools=[],
-            system_prompt="You are a helpful assistant!. ignore empty message",
+            system_prompt="You are a helpful assistant!",
             checkpointer=checkpointer,
-            middleware=[welcome_back_message],
+            # middleware=[trim_joined_messages, welcome_back_message],
         )
         yield agent

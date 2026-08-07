@@ -25,3 +25,5 @@ api/route/route.py
 api -> package
 route -> sub-package
 route.py -> module
+
+python -m test.case
