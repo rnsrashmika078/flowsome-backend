@@ -1,15 +1,11 @@
 from fastapi import Request, APIRouter, Depends
-from schemas.services.lang.chatGroq import get_agent
+from schemas.models.lang.chatGroq import get_agent
 from langchain_core.messages import HumanMessage, ToolMessage
 from fastapi.responses import StreamingResponse
 from langchain_protocol import Command
 from pydantic import BaseModel
-from langchain.agents import create_agent
 import json
-
 from utils.helper import clean_object
-
-# path param : "/api/home/{id}"
 
 router = APIRouter()
 
@@ -18,13 +14,29 @@ router = APIRouter()
 async def stream_response(request: Request, agent=Depends(get_agent)):
     try:
         body = await request.json()
-        # print(body)
-
         payload = body.get("input", body)
         thread_id = payload.get("threadId", "1235")
         interrupt_response = payload.get("interruptResponse")
         messages = payload.get("messages", [])
-        content = messages[0].get("content", "")
+
+        file_content = ""
+        text_content = ""
+        for i in messages:
+            if type(i) is "None":
+                continue
+            elif len(messages) > 1:
+                file_content = messages[1].get("url", "")
+                text_content = messages[0].get("content", "")
+            else:
+                text_content = messages[0].get("content", "")
+
+        print("PAYLOAD", payload)
+        print("file_content", file_content)
+        print("text_content", text_content)
+        print("text_content", type(text_content))
+        print("messages", messages)
+
+        # messages [{'type': 'human', 'content': 'whats up today'}, {}]
 
         config = {
             "configurable": {
@@ -38,8 +50,23 @@ async def stream_response(request: Request, agent=Depends(get_agent)):
                 resume={"decisions": interrupt_response.get("decisions")}
             )
         else:
-            first_msg_content = content if messages else ""
-            input_data = {"messages": [HumanMessage(content=first_msg_content)]}
+            with_attachment = [
+                {"type": "text", "text": text_content},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": file_content},
+                },
+            ]
+            without_attachment = [
+                {"type": "text", "text": text_content},
+            ]
+
+            content = with_attachment if file_content else without_attachment
+            input_data = {
+                "messages": [
+                    HumanMessage(content=content),
+                ]
+            }
 
         async def generate():
             try:
@@ -70,11 +97,11 @@ async def stream_response(request: Request, agent=Depends(get_agent)):
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
-                # "X-Accel-Buffering": "no",
             },
         )
 
     except Exception as err:
+        print(str(err))
         return {"error": str(err)}, 500
 
 
