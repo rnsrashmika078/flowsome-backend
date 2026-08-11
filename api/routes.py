@@ -1,5 +1,4 @@
 from fastapi import Request, APIRouter, Depends
-from schemas.models.lang.chatGroq import get_agent
 from langchain_core.messages import HumanMessage, ToolMessage
 from fastapi.responses import StreamingResponse
 from langchain_protocol import Command
@@ -11,7 +10,7 @@ router = APIRouter()
 
 
 @router.post("/api/stream")
-async def stream_response(request: Request, agent=Depends(get_agent)):
+async def stream_response(request: Request):
     try:
         body = await request.json()
         payload = body.get("input", body)
@@ -25,7 +24,7 @@ async def stream_response(request: Request, agent=Depends(get_agent)):
             if type(i) is "None":
                 continue
             elif len(messages) > 1:
-                file_content = messages[1].get("url", "")
+                file_content = messages[1].get("content", "")
                 text_content = messages[0].get("content", "")
             else:
                 text_content = messages[0].get("content", "")
@@ -68,6 +67,8 @@ async def stream_response(request: Request, agent=Depends(get_agent)):
                 ]
             }
 
+        agent = request.app.state.agent
+
         async def generate():
             try:
                 async for stream_mode, data in agent.astream(
@@ -81,7 +82,6 @@ async def stream_response(request: Request, agent=Depends(get_agent)):
                         "custom",
                     ],
                 ):
-                    # print(data)
                     formatted_data = clean_object(data)
 
                     yield f"event: {stream_mode}\n"
@@ -110,8 +110,9 @@ class History(BaseModel):
 
 
 @router.get("/api/threads/{thread}")
-async def getHistory(thread: int, agent=Depends(get_agent)):
+async def getHistory(request: Request, thread: int):
     config = {"configurable": {"thread_id": thread}}
+    agent = request.app.state.agent
 
     state = await agent.aget_state(config)
 
@@ -119,3 +120,14 @@ async def getHistory(thread: int, agent=Depends(get_agent)):
         return {"messages": []}
 
     return {"values": state.values.get("messages", [])}
+
+
+@router.delete("/api/thread")
+async def clear_history(request: Request):
+    threadList = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    agent = request.app.state.agent
+
+    for i in threadList:
+        await agent.checkpointer.adelete_thread(i)
+
+    return {"message": "Thread history deleted"}

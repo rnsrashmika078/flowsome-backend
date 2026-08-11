@@ -9,7 +9,7 @@ from langchain.messages import RemoveMessage
 from langgraph.runtime import Runtime
 from typing import Any, Callable
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
-from schemas.models.lang.chatGroq import complex_model, simple_model
+from schemas.models.lang.chatModels import complex_model, simple_model, local
 
 
 @before_model(can_jump_to=["end"])
@@ -29,14 +29,35 @@ async def dynamic_model_middleware(
     request: ModelRequest,
     handler: Callable[[ModelRequest], ModelResponse],
 ) -> ModelResponse:
+    selected_model = local
     messages = request.state.get("messages", [])
     for msg in messages:
         if isinstance(msg.content, list):
             for content in msg.content:
-                if content.get("type") == "text":
-                    selected_model = simple_model
-                else:
+                if content.get("type") != "text":
+                    print("I AM SWITCH TO MULTI MODEL")
                     selected_model = complex_model
+                else:
+                    print("I AM SWITCH TO SINGLE MODEL")
+
+    return await handler(request.override(model=selected_model))
+
+
+@wrap_model_call
+async def change_model(
+    request: ModelRequest,
+    handler: Callable[[ModelRequest], ModelResponse],
+) -> ModelResponse:
+    selected_model = local
+    messages = request.state.get("messages", [])
+    for msg in messages:
+        if isinstance(msg.content, list):
+            for content in msg.content:
+                if content.get("type") != "text":
+                    print("I AM SWITCH TO MULTI MODEL")
+                    selected_model = complex_model
+                else:
+                    print("I AM SWITCH TO SINGLE MODEL")
 
     return await handler(request.override(model=selected_model))
 

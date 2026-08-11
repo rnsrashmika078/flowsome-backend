@@ -5,3 +5,4 @@ python-dotenv
 langchain-groq
 langchain
 langgraph-checkpoint-postgres
+langchain-ollama
