@@ -12,6 +12,8 @@ from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from schemas.models.lang.chatModels import complex_model, simple_model, local
 
 
+
+
 @before_model(can_jump_to=["end"])
 def welcome_back_message(state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
     messages = state.get("messages", [])
@@ -24,23 +26,26 @@ def welcome_back_message(state: AgentState, runtime: Runtime) -> dict[str, Any] 
     return None
 
 
+
+
 @wrap_model_call
 async def dynamic_model_middleware(
     request: ModelRequest,
     handler: Callable[[ModelRequest], ModelResponse],
 ) -> ModelResponse:
-    selected_model = local
-    messages = request.state.get("messages", [])
-    for msg in messages:
-        if isinstance(msg.content, list):
-            for content in msg.content:
-                if content.get("type") != "text":
-                    print("I AM SWITCH TO MULTI MODEL")
-                    selected_model = complex_model
-                else:
-                    print("I AM SWITCH TO SINGLE MODEL")
+    try:
+        selected_model = local
+        messages = request.state.get("messages", [])
+        for msg in messages[len(messages)-1].content:
+            if(isinstance(msg,str)):
+                continue
+            if msg.get("type") != "text":
+                        print("I AM SWITCH TO MULTI MODEL")
+                        selected_model = complex_model
 
-    return await handler(request.override(model=selected_model))
+        return await handler(request.override(model=selected_model))
+    except Exception as e:
+        print(f"Middleware error {e}")
 
 
 @wrap_model_call

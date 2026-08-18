@@ -1,17 +1,21 @@
-from fastapi import Request, APIRouter, Depends
+from fastapi import Request, APIRouter, Depends, UploadFile,File
 from langchain_core.messages import HumanMessage, ToolMessage
 from fastapi.responses import StreamingResponse
 from langchain_protocol import Command
 from pydantic import BaseModel
 import json
 from utils.helper import clean_object
-
+from langgraph.config import get_stream_writer
+import uuid
+import os
 router = APIRouter()
 
 
 @router.post("/api/stream")
 async def stream_response(request: Request):
     try:
+        
+        # writer = get_stream_writer();
         body = await request.json()
         payload = body.get("input", body)
         thread_id = payload.get("threadId", "1235")
@@ -75,7 +79,7 @@ async def stream_response(request: Request):
                     input_data,
                     config=config,
                     stream_mode=[
-                        # "updates",
+                        "updates",
                         "messages",
                         "values",
                         "tools",
@@ -84,6 +88,7 @@ async def stream_response(request: Request):
                 ):
                     formatted_data = clean_object(data)
 
+                    print(f"Stream mode: {stream_mode}")
                     yield f"event: {stream_mode}\n"
                     yield f"data: {json.dumps(formatted_data)}\n\n"
 
@@ -131,3 +136,22 @@ async def clear_history(request: Request):
         await agent.checkpointer.adelete_thread(i)
 
     return {"message": "Thread history deleted"}
+
+# upload directory
+
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR,exist_ok=True)
+
+@router.post("/local-upload")
+async def upload_image(file:UploadFile = File(None)):
+    filename = f"{uuid.uuid4()}_{file.filename}"
+    path = os.path.join(UPLOAD_DIR,filename)
+    
+    
+    with open(path,"Wb") as f:
+        f.write(await file.read())
+    
+    
+    return {
+        "url" : f"http://localhost:8000/uploads/{filename}"
+    }

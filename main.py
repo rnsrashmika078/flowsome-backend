@@ -10,14 +10,17 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from core.config import settings
 from schemas.models.lang.chatModels import local, simple_model
 from schemas.services.middleware.customMiddlewares import dynamic_model_middleware
+from langchain.agents.middleware import SummarizationMiddleware
+from schemas.models.lang.chatModels import summarizeModel
 import dotenv
+import os
+from schemas.tools.index import read_file_tool
+from fastapi.staticfiles import StaticFiles
 
 dotenv.load_dotenv()
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
     async with AsyncPostgresSaver.from_conn_string(
         settings.DATABASE_URL
     ) as checkpointer:
@@ -26,20 +29,27 @@ async def lifespan(app: FastAPI):
 
         app.state.agent = create_agent(
             model=local,
-            tools=[],
-            system_prompt="You are a helpful assistant!",
+            tools=[read_file_tool],
+            system_prompt="You are a helpful assistant!. Tools Available: read_file_tool -> read files",
             checkpointer=checkpointer,
-            middleware=[dynamic_model_middleware],
+            middleware=[
+                dynamic_model_middleware, 
+                SummarizationMiddleware(
+                    model=summarizeModel,
+                    trigger=("tokens", 4000),
+                    keep=("messages", 20),
+        ),],
         )
-
         yield
 
 
 app = FastAPI(lifespan=lifespan)
 
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000" , "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
