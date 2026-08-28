@@ -8,7 +8,7 @@ from pydantic import BaseModel
 import json
 
 import requests
-from utils.helper import clean_object
+from utils.helper import ImageEncode, clean_object, clean_object_v2, init_create_agent
 from langgraph.config import get_stream_writer
 import uuid
 import os
@@ -27,8 +27,11 @@ async def stream_response(request: Request):
         interrupt_response = payload.get("interruptResponse")
         messages = payload.get("messages", [])
 
-        file_content = ""
-        text_content = ""
+        file_content = None
+        text_content = None
+        response_file = None
+        encoded_img = None
+
         for i in messages:
             if i is "None":
                 continue
@@ -38,23 +41,23 @@ async def stream_response(request: Request):
             else:
                 text_content = messages[0].get("content", "")
 
-        print(f"File content: {file_content}")
-        print(f"Text Content: {text_content}")
+        # print(f"File content: {file_content}")
+        # print(f"Text Content: {text_content}")
 
         # messages [{'type': 'human', 'content': 'whats up today'}, {}]
 
+        # thread configurations
         config = {
             "configurable": {
                 "thread_id": thread_id,
             },
             "recursion_limit": 25,
         }
-        # path  = rf"{file_content}"
-        # You can also pass in base64 encoded image data
-        response_file = requests.get(file_content)
-        image_bytes = response_file.content
-        
-        encoded_img = base64.b64encode(image_bytes).decode("utf-8")
+
+        #  image encode
+        encoded_img = ImageEncode(file_content, requests)
+
+        # human in the loop
         if interrupt_response:
             input_data = Command(
                 resume={"decisions": interrupt_response.get("decisions")}
@@ -65,6 +68,7 @@ async def stream_response(request: Request):
                 {
                     "type": "image_url",
                     "image_url": {"url": encoded_img},
+                    "raw": file_content,
                 },
                 #     {
                 #         "type": "image_url",
@@ -77,8 +81,7 @@ async def stream_response(request: Request):
             without_attachment = [
                 {"type": "text", "text": text_content},
             ]
-            # content = with_attachment if file_content else without_attachment
-            content = with_attachment 
+            content = with_attachment if file_content else without_attachment
 
             input_data = {
                 "messages": [
@@ -101,7 +104,7 @@ async def stream_response(request: Request):
                         "custom",
                     ],
                 ):
-                    formatted_data = clean_object(data)
+                    formatted_data = clean_object_v2(data)
                     yield f"event: {stream_mode}\n"
                     yield f"data: {json.dumps(formatted_data)}\n\n"
 
@@ -129,6 +132,7 @@ class History(BaseModel):
 
 @router.get("/api/threads/{thread}")
 async def getHistory(request: Request, thread: int):
+    print("Hit Delete history route")
     config = {"configurable": {"thread_id": thread}}
     agent = request.app.state.agent
 
@@ -149,6 +153,14 @@ async def clear_history(request: Request):
         await agent.checkpointer.adelete_thread(i)
 
     return {"message": "Thread history deleted"}
+
+
+@router.post("/select-folder")
+async def select_folder(request: Request):
+    request.app.state.root_path = r"C:\Users\Rashm\OneDrive\Desktop\path2"
+
+    # request.app.state.agent = init_create_agent(request.app.state.checkpointer, app.state.root_path)
+    return {"root_path": request.app.state.root_path}
 
 
 # upload directory

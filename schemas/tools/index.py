@@ -8,23 +8,35 @@ from langchain_protocol import Command
 
 
 @tool("read_file")  # Custom name
-def read_file_tool(path_to_file: str) -> str:
+def read_file_tool(path_to_file: str, file_name: str, toolRunTime: ToolRuntime) -> str:
     """read file from user computer.
 
-    input: filePath: path to the file -> "document/name/txt"
+    input:
+        path_to_file: path to the file including file name -> ex: "desktop/abc.txt"
+        fileName: file name -> ex: abc.txt
 
     """
-
+    print(f"path_to_file : {path_to_file}")
+    writer = toolRunTime.stream_writer
+    writer({"message": f"Reading file {file_name}"})
     home_dir = os.path.expanduser("~")
     file_path = os.path.join(home_dir, path_to_file)
+    print(f"file path: {file_path}")
+    try:
+        with open(file_path, "r", encoding="utf-8") as file:
+            return file.read()
+            # return f"Content: {content}"
+    except FileNotFoundError:
+        writer({"message": ""})
+        return "File not found."
 
-    with open(file_path, "r", encoding="utf-8") as file:
-        content = file.read()
-        # return {
-        #     "filePath" : file_path,
-        #     "Content" : content
-        # }
-        return f"Content: {content}"
+    except PermissionError:
+        writer({"message": ""})
+        return "Permission denied."
+
+    except Exception as e:
+        writer({"message": ""})
+        return f"Error reading file: {e}"
 
 
 @tool("read_image")  # Custom name
