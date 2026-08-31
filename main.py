@@ -30,12 +30,11 @@ async def lifespan(app: FastAPI):
             app.state.checkpointer = checkpointer
             app.state.root_path = r"C:\Users\Rashm\OneDrive\Desktop\path"
 
-            app.state.agent = await init_create_agent(
-                checkpointer, app.state.root_path
-            )
+            app.state.agent = await init_create_agent(checkpointer, app.state.root_path)
             yield
     except Exception as e:
         print(f"error: {str(e)}")
+        raise
 
 
 app = FastAPI(lifespan=lifespan)

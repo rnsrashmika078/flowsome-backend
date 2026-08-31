@@ -27,3 +27,6 @@ route -> sub-package
 route.py -> module
 
 python -m test.case
+
+
+flowsome-env\Scripts\python.exe -m pip install -r requirements.txt

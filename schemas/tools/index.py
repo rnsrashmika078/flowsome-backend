@@ -1,9 +1,10 @@
 from pathlib import Path
+from typing import Literal
 
 from langchain.messages import ToolMessage
 from langchain.tools import tool, ToolRuntime
 import os
-
+from core.config import settings
 from langchain_protocol import Command
 from ollama import chat
 
@@ -40,26 +41,21 @@ def read_file_tool(path_to_file: str, file_name: str, toolRunTime: ToolRuntime) 
         return f"Error reading file: {e}"
 
 
-# @tool("generate_chat_title")
-# def generate_chat_title(firstMessage: str, toolRunTime: ToolRuntime) -> str:
-#     """generate title for chat at beginning only ( at first message of chat).
+from tavily import TavilyClient
 
-#     input:
-#         firstMessage:string -> user first message
-#     """
-#     response = chat(
-#         model="qwen2.5-coder:3b",
-#         messages=[
-#             {
-#                 "role": "user",
-#                 "content": f"generate title for the chat based on below message. no preamble:   first Message: {firstMessage}",
-#             }
-#         ],
-#     )
+tavily_client = TavilyClient(api_key=settings.TAVILY_API_KEY)
 
-#     print(response.message.content)
 
-#     writer = toolRunTime.stream_writer
-#     writer({"message": "Generating title to the chat"})
-
-#     return {"title": response.messages.content}
+def internet_search(
+    query: str,
+    max_results: int = 5,
+    topic: Literal["general", "news", "finance"] = "general",
+    include_raw_content: bool = False,
+):
+    """Run a web search"""
+    return tavily_client.search(
+        query,
+        max_results=max_results,
+        include_raw_content=include_raw_content,
+        topic=topic,
+    )

@@ -13,6 +13,7 @@ from langchain.agents.middleware import (
 )
 from schemas.models.lang.chatModels import summarizeModel
 import base64
+from schemas.tools.index import internet_search
 from schemas.tools.mcp.index import main
 
 
@@ -94,7 +95,9 @@ async def init_create_agent(checkpointer, root_path):
             },
         }
     )
-    tools = await client.get_tools()
+    mcp_tools = await client.get_tools()
+
+    tools = mcp_tools + [internet_search]
     agent = create_agent(
         model=local,
         tools=tools,
