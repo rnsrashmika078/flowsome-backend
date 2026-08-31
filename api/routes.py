@@ -1,4 +1,3 @@
-import base64
 from pathlib import Path
 from fastapi import Request, APIRouter, Depends, UploadFile, File
 from langchain_core.messages import HumanMessage, ToolMessage
@@ -6,12 +5,12 @@ from fastapi.responses import StreamingResponse
 from langchain_protocol import Command
 from pydantic import BaseModel
 import json
-
+from sqlalchemy.orm import Session
 import requests
+from models.thread import Thread
 from utils.helper import ImageEncode, clean_object, clean_object_v2, init_create_agent
 from langgraph.config import get_stream_writer
-import uuid
-import os
+from database.index import get_db
 
 router = APIRouter()
 
@@ -33,7 +32,7 @@ async def stream_response(request: Request):
         encoded_img = None
 
         for i in messages:
-            if i is "None":
+            if i == "None":
                 continue
             elif len(messages) > 1:
                 file_content = messages[1].get("content", "")
@@ -130,9 +129,8 @@ class History(BaseModel):
     thread: str
 
 
-@router.get("/api/threads/{thread}")
-async def getHistory(request: Request, thread: int):
-    print("Hit Delete history route")
+@router.get("/api/threads/history/{thread}")
+async def getHistory(request: Request, thread: str):
     config = {"configurable": {"thread_id": thread}}
     agent = request.app.state.agent
 
@@ -144,15 +142,47 @@ async def getHistory(request: Request, thread: int):
     return {"values": state.values.get("messages", [])}
 
 
-@router.delete("/api/thread")
-async def clear_history(request: Request):
-    threadList = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+class ThreadBody(BaseModel):
+    thread_id: str
+    thread_name: str
+
+
+@router.post("/api/threads/add_thread")
+async def addThread(
+    thread: ThreadBody, request: Request, db: Session = Depends(get_db)
+):
+    try:
+        new_thread = Thread(thread_id=thread.thread_id, thread_name=thread.thread_name)
+        db.add(new_thread)
+        db.commit()
+        db.refresh(new_thread)
+        return {"thread": new_thread}
+    except Exception as e:
+        db.rollback()
+        print(str(e))
+
+
+@router.get("/api/threads/get_threads")
+async def getThreads(db: Session = Depends(get_db)):
+    try:
+        threads = db.query(Thread).all()
+        print(f"threads {threads}")
+        return threads
+    except Exception as e:
+        db.rollback()
+        print(str(e))
+
+
+@router.delete("/api/thread/{thread}")
+async def delete_thread(request: Request, thread: str, db: Session = Depends(get_db)):
     agent = request.app.state.agent
+    await agent.checkpointer.adelete_thread(thread)
+    found_thread = db.query(Thread).filter(Thread.thread_id == thread).first()
 
-    for i in threadList:
-        await agent.checkpointer.adelete_thread(i)
-
-    return {"message": "Thread history deleted"}
+    if found_thread:
+        db.delete(found_thread)
+        db.commit()
+    return {"message": "Thread was deleted!"}
 
 
 @router.post("/select-folder")

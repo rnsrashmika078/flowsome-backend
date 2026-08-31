@@ -9,9 +9,8 @@ from langchain.messages import RemoveMessage
 from langgraph.runtime import Runtime
 from typing import Any, Callable
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
+from ollama import chat
 from schemas.models.lang.chatModels import complex_model, simple_model, local
-
-
 
 
 @before_model(can_jump_to=["end"])
@@ -23,9 +22,29 @@ def welcome_back_message(state: AgentState, runtime: Runtime) -> dict[str, Any] 
             # "messages": [AIMessage("")],
             "jump_to": "end",
         }
+
     return None
 
 
+@before_model
+def generate_chat_title(state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
+    messages = state.get("messages", [])
+    lastMessage = messages[len(messages) - 1].content
+    if len(messages) <= 1:
+        writer = runtime.stream_writer
+        writer({"message": "Generating title to the chat"})
+        response = chat(
+            model="qwen2.5-coder:3b",
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"generate creative short title for the chat based on message. no preamble:  The message: {lastMessage}",
+                }
+            ],
+        )
+        writer({"title": response.message.content})
+
+    return None
 
 
 @wrap_model_call
@@ -36,12 +55,12 @@ async def dynamic_model_middleware(
     try:
         selected_model = local
         messages = request.state.get("messages", [])
-        for msg in messages[len(messages)-1].content:
-            if(isinstance(msg,str)):
+        for msg in messages[len(messages) - 1].content:
+            if isinstance(msg, str):
                 continue
             if msg.get("type") != "text":
-                        print("I AM SWITCH TO MULTI MODEL")
-                        selected_model = complex_model
+                print("I AM SWITCH TO MULTI MODEL")
+                selected_model = complex_model
 
         return await handler(request.override(model=selected_model))
     except Exception as e:

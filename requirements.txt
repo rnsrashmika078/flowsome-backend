@@ -7,3 +7,7 @@ langchain
 langgraph-checkpoint-postgres
 langchain-ollama
 python-multipart
+sqlalchemy
+psycopg2-binary
+langchain-mcp-adapters
+fastmcp
