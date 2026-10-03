@@ -28,7 +28,6 @@ async def stream_response(request: Request):
 
         file_content = None
         text_content = None
-        response_file = None
         encoded_img = None
 
         for i in messages:
@@ -39,11 +38,6 @@ async def stream_response(request: Request):
                 text_content = messages[0].get("content", "")
             else:
                 text_content = messages[0].get("content", "")
-
-        # print(f"File content: {file_content}")
-        # print(f"Text Content: {text_content}")
-
-        # messages [{'type': 'human', 'content': 'whats up today'}, {}]
 
         # thread configurations
         config = {
@@ -69,12 +63,6 @@ async def stream_response(request: Request):
                     "image_url": {"url": encoded_img},
                     "raw": file_content,
                 },
-                #     {
-                #         "type": "image_url",
-                #         "image_url": {
-                #             "url": file_content,
-                #         },
-                #     },
             ]
 
             without_attachment = [
@@ -101,6 +89,7 @@ async def stream_response(request: Request):
                         "values",
                         "tools",
                         "custom",
+                        
                     ],
                 ):
                     formatted_data = clean_object_v2(data)

@@ -4,13 +4,83 @@ from langchain.agents.middleware import (
     before_model,
     AgentState,
     wrap_model_call,
+    FilesystemFileSearchMiddleware,
+    AgentMiddleware,
 )
-from langchain.messages import RemoveMessage
+from pathlib import Path
+import os
+from langchain.messages import RemoveMessage, ToolMessage
 from langgraph.runtime import Runtime
 from typing import Any, Callable
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
+from langgraph.prebuilt.tool_node import ToolCallRequest
 from ollama import chat
 from schemas.models.lang.chatModels import complex_model, simple_model, local
+
+
+class FlexibleFileSearchMiddleware(FilesystemFileSearchMiddleware):
+    def _resolve_user_dir(self, name: str):
+        profile = os.environ.get("USERPROFILE", str(Path.home()))
+        for parent in (Path(profile) / "OneDrive", Path(profile)):
+            candidate = parent / name
+            if candidate.exists():
+                return candidate.resolve()
+        return None
+
+    def _validate_and_resolve_path(self, path):
+        if Path(path).is_absolute():
+            return Path(path).resolve()
+
+        normal = path.replace("/", "\\")
+        parts = normal.split("\\")
+
+        if parts and parts[0]:
+            base = self._resolve_user_dir(parts[0])
+            if base is not None:
+                full = base.joinpath(*parts[1:]) if len(parts) > 1 else base
+                return full.resolve()
+
+        candidate = Path.home() / path
+        if candidate.exists():
+            return candidate.resolve()
+
+        return super()._validate_and_resolve_path(path)
+
+
+class RecursiveGlobMiddleware(AgentMiddleware):
+    MAX_RESULTS = 200
+    MAX_CHARS = 8000
+
+    @staticmethod
+    def _cap_result(result: str) -> str:
+        lines = result.splitlines() if isinstance(result, str) else []
+        if len(lines) > RecursiveGlobMiddleware.MAX_RESULTS:
+            lines = lines[: RecursiveGlobMiddleware.MAX_RESULTS]
+            lines.append(
+                f"... ({len(lines)} of {len(result.splitlines())} matches shown, "
+                "truncated to avoid overflowing context) ..."
+            )
+            result = "\n".join(lines)
+        if isinstance(result, str) and len(result) > RecursiveGlobMiddleware.MAX_CHARS:
+            result = (
+                result[: RecursiveGlobMiddleware.MAX_CHARS]
+                + "\n... (result truncated to avoid overflowing context) ..."
+            )
+        return result
+
+    async def awrap_tool_call(self, request: ToolCallRequest, handler):
+        call = request.tool_call
+        if call["name"] == "glob_search":
+            args = dict(call["args"])
+            pattern = args.get("pattern", "")
+            if pattern and "/" not in pattern and "**" not in pattern:
+                args["pattern"] = f"**/{pattern}"
+                request = request.override(tool_call={**call, "args": args})
+        result = await handler(request)
+        if call["name"] in {"glob_search", "grep_search"} and isinstance(result, ToolMessage):
+            if isinstance(result.content, str):
+                result = result.model_copy(update={"content": self._cap_result(result.content)})
+        return result
 
 
 @before_model(can_jump_to=["end"])

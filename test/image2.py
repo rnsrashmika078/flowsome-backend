@@ -4,7 +4,7 @@ import requests
 from ollama import chat
 
 
-url = "https://res.cloudinary.com/dwcjokd3s/image/upload/v1783368889/LiveLink/uploads/xva7j9kelda8e1147snh.jpg"
+url = r"C:\Users\Rashm\Desktop/lln.png"
 img = Path(url).read_bytes()
 
 

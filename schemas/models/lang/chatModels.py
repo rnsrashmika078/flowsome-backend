@@ -25,5 +25,5 @@ complex_model = ChatGroq(
 )
 
 model = "gemma4:e2b"
-local = ChatOllama(model=model, reasoning=True)
+local = ChatOllama(model=model, reasoning=True, num_ctx=16384)
 summarizeModel = ChatOllama(model="qwen2.5-coder:3b", reasoning=False)
