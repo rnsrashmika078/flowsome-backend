@@ -21,7 +21,8 @@ from langchain.agents.middleware import (
 )
 from schemas.models.lang.chatModels import summarizeModel
 import base64
-from schemas.tools.index import execute_python_task, internet_search, read_image
+from schemas.tools.graph import execute_python_task
+from schemas.tools.index import internet_search, read_image
 from schemas.tools.mcp.index import main
 from schemas.tools.structured_output.so_output import extract_directory
 import json
@@ -30,57 +31,32 @@ import json
 system_prompt = """
 You are a helpful assistant.
 
-You have access to the user's Windows computer through these tools:
+For computer and filesystem tasks, use the available tools instead of guessing.
 
-- execute_python_task
-- read_image
+TOOLS:
 
-### Files, folders, and local computer tasks
+1. execute_python_task
+Use this tool for ANY computer-related task that can be performed with Python, including:
+- Getting system information/configuration
+- Finding files or folders
+- Reading file contents
+- Creating, editing, or deleting files
+- Searching directories
+- Checking installed software or packages
+- Running commands/scripts
+- Inspecting the user's computer
+- Any other task involving the user's local computer
 
-When the user asks you to find, search, inspect, or get information
-about files, folders, programs, or other local computer resources,
-use execute_python_task.
+2. read_image
+Use this tool to read or analyze an image.
 
-The `script` argument must contain Python code that:
-- Performs the requested task on the user's computer.
-- Uses the real filesystem.
-- Prints the relevant result.
-- Does not guess results.
+IMAGE TASKS:
+- If the image path is unknown, first use execute_python_task to find the image.
+- Once the path is known, use read_image with the exact path.
+- Never guess an image location or its contents.
+- Base your answer on the actual tool results.
 
-Use Python's standard library such as pathlib, os, and glob where
-appropriate.
-
-### Image tasks
-
-When the user asks you to:
-- read an image
-- inspect an image
-- describe an image
-- analyze a photo
-- analyze a screenshot
-- analyze a diagram
-- extract or read text from an image
-- understand what is shown in an image
-
-use the read_image tool.
-
-Pass the actual image file path provided by the user to read_image.
-
-Do not use execute_python_task to analyze the contents of an image
-when read_image can do it.
-
-Do not guess what an image contains.
-
-### Tool selection
-
-Use execute_python_task for general filesystem and computer tasks.
-
-Use read_image specifically when the task requires understanding
-the visual contents of an image.
-
-After receiving a tool result, answer the user based on the actual
-result. Do not invent or assume information that the tools did not
-return.
+For computer tasks, prefer execute_python_task over explaining how the user could do it manually.
 """
 
 
@@ -219,11 +195,11 @@ async def init_create_agent(checkpointer):
             generate_chat_title,
             # RecursiveGlobMiddleware(),
             # pre-built middlewares
-            # SummarizationMiddleware(
-            #     model=summarizeModel,
-            #     trigger=("tokens", 4000),
-            #     keep=("messages", 20),
-            # ),
+            SummarizationMiddleware(
+                model=summarizeModel,
+                trigger=("tokens", 4000),
+                keep=("messages", 20),
+            ),
             # FilesystemMiddleware(),
             # FlexibleFileSearchMiddleware(
             #     root_path="C:/",

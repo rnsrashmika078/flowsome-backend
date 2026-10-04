@@ -1,42 +1,112 @@
-import ollama
+import os
 
-model = "gemma3:latest"
+def list_files_by_type(directory):
+    """Lists image, PDF, and text files in the given directory."""
+    file_types = {
+        'image': ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff'],
+        'pdf': ['.pdf'],
+        'text': ['.txt']
+    }
+    found_files = {
+        'image': [],
+        'pdf': [],
+        'text': []
+    }
 
-big_result = "\n".join(
-    f"/Program Files/Folder{i // 20}/sub{chr(92)}deep{chr(92)}file{i}.cpp" for i in range(2500)
-)
-print("result size chars:", len(big_result))
+    if not os.path.isdir(directory):
+        print(f"Error: Directory not found at {directory}")
+        return found_files
 
-messages = [
-    {
-        "role": "system",
-        "content": (
-            "You are a helpful assistant. When the user asks whether a program is installed "
-            "you check with glob_search and answer yes/no. Do not repeat the tool schema."
-        ),
-    },
-    {"role": "user", "content": "check weather steam install or not ?"},
-    {
-        "role": "assistant",
-        "content": "",
-        "tool_calls": [
-            {
-                "type": "function",
-                "id": "abc123",
-                "function": {
-                    "name": "glob_search",
-                    "arguments": {"path": "C:/Program Files", "pattern": "**/*steam*"},
-                },
-            }
-        ],
-    },
-    {"role": "tool", "tool_call_id": "abc123", "content": big_result},
-]
-
-for nctx in (8192, 2048):
-    print(f"\n=== num_ctx={nctx} prompt tokens approx = {len(messages[3]['content'])//4} ===")
     try:
-        res = ollama.chat(model=model, messages=messages, stream=False, options={"num_ctx": nctx})
-        print("ANSWER:", repr(res["message"]["content"][:300]))
+        for filename in os.listdir(directory):
+            filepath = os.path.join(directory, filename)
+            if os.path.isfile(filepath):
+                # Check for image files
+                if filename.lower().endswith(file_types['image']):
+                    found_files['image'].append(filename)
+                # Check for PDF files
+                elif filename.lower().endswith(file_types['pdf']):
+                    found_files['pdf'].append(filename)
+                # Check for text files
+                elif filename.lower().endswith(file_types['text']):
+                    found_files['text'].append(filename)
+
     except Exception as e:
-        print("ERR:", type(e).__name__, e)
+        print(f"An error occurred: {e}")
+
+    return found_files
+
+# Define the desktop directory
+desktop_path = os.path.expanduser("~/Desktop")
+
+# List the files
+results = list_files_by_type(desktop_path)
+
+# Print the results
+print("--- Image Files ---")
+for img in results['image']:
+    print(img)
+
+print("\n--- PDF Files ---")
+for pdf in results['pdf']:
+    print(pdf)
+
+print("\n--- Text Files ---")
+for txt in results['text']:
+    print(txt)
+import os
+
+def list_files_by_type(directory):
+    """Lists image, PDF, and text files in the given directory."""
+    file_types = {
+        'image': ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff'],
+        'pdf': ['.pdf'],
+        'text': ['.txt']
+    }
+    found_files = {
+        'image': [],
+        'pdf': [],
+        'text': []
+    }
+
+    if not os.path.isdir(directory):
+        print(f"Error: Directory not found at {directory}")
+        return found_files
+
+    try:
+        for filename in os.listdir(directory):
+            filepath = os.path.join(directory, filename)
+            if os.path.isfile(filepath):
+                # Check for image files
+                if filename.lower().endswith(file_types['image']):
+                    found_files['image'].append(filename)
+                # Check for PDF files
+                elif filename.lower().endswith(file_types['pdf']):
+                    found_files['pdf'].append(filename)
+                # Check for text files
+                elif filename.lower().endswith(file_types['text']):
+                    found_files['text'].append(filename)
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+    return found_files
+
+# Define the desktop directory
+desktop_path = os.path.expanduser("~/Desktop")
+
+# List the files
+results = list_files_by_type(desktop_path)
+
+# Print the results
+print("--- Image Files ---")
+for img in results['image']:
+    print(img)
+
+print("\n--- PDF Files ---")
+for pdf in results['pdf']:
+    print(pdf)
+
+print("\n--- Text Files ---")
+for txt in results['text']:
+    print(txt)
