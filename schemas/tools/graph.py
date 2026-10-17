@@ -5,7 +5,6 @@ from schemas.tools.graph_tools import (
     eval_output,
     execute_script,
     generate_script,
-    isPathAvailable,
 )
 from langgraph.config import get_stream_writer, get_config
 
@@ -14,7 +13,7 @@ def execute_python_task(
     task: str,
     # runtime: ToolRuntime[None, CustomState],
     runtime: ToolRuntime,
-    max_attempt: int = 3,
+    max_attempt: int = 5,
 ) -> str:
     """Langgraph agent for generate python script based on user given task
 
@@ -55,6 +54,7 @@ def execute_python_task(
             "previous_script": [],
             "attempt": 0,
             "max_attempt": max_attempt,
+            "output_file_path": "",
         },
         stream_mode=["updates", "custom"],
         version="v2",
@@ -75,10 +75,14 @@ def execute_python_task(
 
     script = full_state.get("python_script", "")
     result = full_state.get("result", "")
+    output_file_path = full_state.get("output_file_path", "")
     attempts = full_state.get("attempt", 0)
 
     if full_state.get("status", "green") == "green":
-        return result or "Script completed successfully with no output."
+        return {
+            "result": result,
+            "output_file_path": output_file_path,
+        } or "Script completed successfully with no output."
 
     return (
         f"Script still failing after {attempts} attempt(s):\n{result}"

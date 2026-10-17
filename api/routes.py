@@ -12,13 +12,13 @@ from utils.helper import ImageEncode, clean_object, clean_object_v2, init_create
 from langgraph.config import get_stream_writer
 from database.index import get_db
 
+
 router = APIRouter()
 
 
 @router.post("/api/stream")
 async def stream_response(request: Request):
     try:
-
         # writer = get_stream_writer();
         body = await request.json()
         payload = body.get("input", body)
@@ -89,7 +89,6 @@ async def stream_response(request: Request):
                         "values",
                         "tools",
                         "custom",
-                        
                     ],
                 ):
                     formatted_data = clean_object_v2(data)
@@ -182,19 +181,29 @@ async def select_folder(request: Request):
     return {"root_path": request.app.state.root_path}
 
 
-# upload directory
-
-# UPLOAD_DIR = "uploads"
-# os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
-# @router.post("/local-upload")
-# async def upload_image(file: UploadFile = File(None)):
-#     print(f"FILE {file}")
-#     filename = f"{uuid.uuid4()}_{file.filename}"
-#     path = os.path.join(UPLOAD_DIR, filename)
+from uuid import uuid4
+from pathlib import Path
+from fastapi import HTTPException
+import shutil
 
-#     with open(path, "wb") as f:
-#         f.write(await file.read())
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
 
-#     return {"url": f"http://localhost:8000/uploads/{filename}"}
+ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp"}
+
+
+@router.post("/api/upload")
+async def upload_image(request: Request, file: UploadFile = File(...)):
+    ext = Path(file.filename).suffix.lower()
+    if ext not in ALLOWED_EXT:
+        raise HTTPException(status_code=400, detail="Only image files are allowed")
+
+    filename = f"{uuid4().hex}{ext}"
+    file_path = UPLOAD_DIR / filename
+
+    with file_path.open("wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    return {"secure_url": str(request.base_url).rstrip("/") + f"/uploads/{filename}"}

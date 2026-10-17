@@ -1,8 +1,9 @@
 import json
 import operator
 import subprocess
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Optional
 import os
+import re
 
 from typing_extensions import TypedDict
 from langgraph.graph import StateGraph, START, END
@@ -18,7 +19,7 @@ from pydantic import BaseModel, Field
 
 # from utils.read_files import recall_project_structure
 
-llm = ChatOllama(model="qwen2.5-coder:3b", reasoning=False, temperature=0.4)
+llm = ChatOllama(model="gemma4:e2b", reasoning=False, temperature=0.4)
 import sys
 
 MAX_RESULT_CHARS = 2000
@@ -34,33 +35,28 @@ class State(TypedDict):
     previous_script: Annotated[list[str], operator.add]
     attempt: int
     max_attempt: int
+    output_file_path: str
 
 
 class GeneratePythonScriptOutput(BaseModel):
     script: str = Field(..., description="Python script for user given task")
 
 
-# class FileContentStructuredOutput(BaseModel):
-#     content: str = Field(..., description="Suitable file content to the file")
-
-
-# class StandardReactProjectStructure(BaseModel):
-#     knowledge_base: str = Field(
-#         ...,
-#         description="The knowledge you gain from read md file about react project standard structure",
-#     )
-
-
 # Nodes
 def generate_script(
     state: State,
 ) -> dict:
-    """Generate python script based on user given task"""
+    """Generate python script based on user given task
+
+    output:
+        python_script: newly generated python script
+        previous_script: previous attempts python scripts if there any
+    """
 
     writer = get_stream_writer()
     writer(
         {
-            "status": f"Generating Python script... (attempt {state.get('attempt', 0) + 1}/{state.get('max_attempt', 1)})"
+            "message": f"Generating Python script... (attempt {state.get('attempt', 0) + 1}/{state.get('max_attempt', 1)})"
         }
     )
     prompt = f"""
@@ -83,7 +79,7 @@ def generate_script(
 
     structured_llm = llm.with_structured_output(GeneratePythonScriptOutput)
     result: GeneratePythonScriptOutput = structured_llm.invoke(prompt)
-    print("Script: ", result.script)
+    # print("output_file_path: ", result.output_file_path)
     return {
         "python_script": result.script,
         "previous_script": [result.script],
@@ -97,7 +93,7 @@ def execute_script(
     """Execute python script"""
 
     writer = get_stream_writer()
-    writer({"status": "Executing Python script..."})
+    writer({"message": "Executing Python script..."})
 
     print(state["python_script"])
 
@@ -111,6 +107,7 @@ def execute_script(
             timeout=30,
             shell=False,
         )
+        print("RESULT OF THE SCRIPT", result)
         if result.returncode != 0:
             writer({"message": "Script execution failed."})
 
@@ -121,11 +118,14 @@ def execute_script(
             }
 
         writer({"message": "Script completed."})
-
+        result = result.stdout
+        match = re.search(r"[A-Za-z]:\\[^\r\n]*", result)
+        path = match.group(0).strip() if match else ""
         return {
-            "result": result.stdout.strip()[-MAX_RESULT_CHARS:],
+            "result": result.strip()[-MAX_RESULT_CHARS:],
             "status": "green",
             "attempt": attempt,
+            "output_file_path": path,
         }
 
     except subprocess.TimeoutExpired as e:
@@ -145,7 +145,7 @@ def eval_output(
     """Evaluate output of the python script and decide whether to retry"""
 
     writer = get_stream_writer()
-    writer({"status": "Evaluating Python script..."})
+    writer({"message": "Evaluating Python script..."})
 
     if state["status"] == "green":
         return "green"
@@ -154,194 +154,3 @@ def eval_output(
         return "exhausted"
 
     return "red"
-
-
-def determine_file_path(
-    state: State,
-) -> dict:
-    """decide the suitable project absolute path and return a suitable absolute path/directory according to the task based on user given fileTree and knowledge. NO PREAMBLE"""
-
-    writer = get_stream_writer()
-    writer({"status": "Scanning project path ..."})
-    prompt = f"""
-    YOU ARE ABSOLUTE PATH FINDER
-    You MUST return ONLY valid JSzzzzzON.
-
-    Output format:
-    {{"absolute_path": "string"}}
-    Task:
-    {state['task']}
-
-    ROOT ABSOLUTE PATH : {state['root_path']}
-    
-    File Tree:
-    {state['fileTree']}
-    
-    Knowledge about standard file tree:
-    {state['knowledge_base']}
-
-    Rules:
-    - Only return JSON
-    - Do NOT explain
-    - Do NOT add extra text
-    """
-
-    structured_llm = llm.with_structured_output(FilePathStructuredOutput)
-    result: FilePathStructuredOutput = structured_llm.invoke(prompt)
-    print("STRUCTURED OUTPUT:", result)
-    return {"absolute_path": result.absolute_path}
-
-
-def isPathAvailable(state: State):
-    """check weather the state path available"""
-
-    writer = get_stream_writer()
-    writer({"status": "Checking Path Availability..."})
-
-    if state["absolute_path"] is None:
-        return "Fail"
-    return "Pass"
-
-
-def isLoopDone(state: State):
-    """check weather the loop done"""
-
-    writer = get_stream_writer()
-    writer({"status": "Checking re run loop state..."})
-
-    if state["current_loop_count"] > state["loop_count"]:
-        return "Done"
-    cleanState()
-    return "Continue"
-
-
-def generate_file_content(
-    state: State,
-) -> dict:
-    """generate file content according to the task"""
-
-    writer = get_stream_writer()
-    writer({"status": "Generating file content..."})
-    prompt = f"""
-    YOU ARE CONTENT GENERATOR
-    Generate file content based on TASK
-    You MUST return ONLY valid JSON.
-    
-     Output format:
-    {{"content": "string"}}
-    
-    Task : {state['task']}
-    
-    Rules:
-    - Only return JSON
-    - Do NOT explain
-    - GENERATE JUST CONTENT ONLY 
-    """
-
-    structured_llm = llm.with_structured_output(FileContentStructuredOutput)
-    result: FileContentStructuredOutput = structured_llm.invoke(prompt)
-    print("FILE CONTENT:", result)
-    return {"content": result.content}
-
-
-def generate_file(
-    state: State,
-) -> str:
-    """use to create/generate file"""
-
-    writer = get_stream_writer()
-    writer({"status": "Generating file ..."})
-    path = state["absolute_path"]
-    content = state["content"]
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w") as f:
-            writer({"status": "On Generating..."})
-            f.write(content)
-            count = state.get("current_loop_count", 1) + 1
-            return {"task_status": "Success", "current_loop_count": count}
-    except Exception as e:
-        return {"task_status": "Failed"}
-
-
-def run_langgraph(
-    task: str,
-    loop_count: int,
-    runtime: ToolRuntime[None, CustomState],
-) -> str:
-    """Langgraph agent that work with the file system
-
-    Args:
-        task (str): Task user given to you
-        loop_count: (int): How many times run this task
-
-    Return :
-     str:  Only successfully or failed message.
-    """
-
-    writer = get_stream_writer()
-
-    workflow = StateGraph(State)
-    workflow.add_node("recall_standard_structure", recall_standard_structure)
-    workflow.add_node("determine_path", determine_file_path)
-    workflow.add_node("content_generate", generate_file_content)
-    workflow.add_node("file_generation", generate_file)
-
-    # config = get_config()
-    # runtime_state = config.get("configurable", {})
-    # path = runtime_state.get("rootPath")
-
-    tree = runtime.state.get("fileTree")
-    root_path = runtime.state.get("rootPath")
-    # path = runtime.state.get("rootPath")
-    tree_str = json.dumps(tree, indent=2)
-
-    if tree_str is None:
-        return
-    # workflow.add_edge(START, "recall_standard_structure")
-    # workflow.add_edge("recall_standard_structure", END)
-    workflow.add_edge(START, "recall_standard_structure")
-    workflow.add_edge("recall_standard_structure", "determine_path")
-    workflow.add_conditional_edges(
-        "determine_path", isPathAvailable, {"Fail": END, "Pass": "content_generate"}
-    )
-    workflow.add_edge("content_generate", "file_generation")
-    # workflow.add_edge("file_generation", END)
-    workflow.add_conditional_edges(
-        "file_generation",
-        isLoopDone,
-        {"Done": END, "Continue": "determine_path"},
-    )
-
-    chain = workflow.compile()
-    full_state = {}
-
-    for chunk in chain.stream(
-        {
-            "task": task,
-            "root_path": root_path,
-            "fileTree": tree_str,
-            "absolute_path": None,
-            "content": None,
-            "knowledge_base": None,
-            "task_status": None,
-            "loop_count": loop_count,
-            "current_loop_count": 1,
-        },
-        stream_mode=["updates", "custom"],
-        version="v2",
-    ):
-        if chunk["type"] == "updates":
-            for node_name, state in chunk["data"].items():
-                # print(f"Node {node_name} updated: {state}")
-                full_state.update(state)
-        if chunk["type"] == "custom":
-            # print(f"Status: {chunk['data']['status']}")
-            writer(f"{chunk['data']['status']}")
-
-    state = full_state
-    # return {
-    #     "absolute_path": state.get("absolute_path"),
-    #     "content": state.get("content"),
-    # }
-    return f"file create successful at {state["absolute_path"]}"

@@ -27,8 +27,8 @@ async def lifespan(app: FastAPI):
 
             await checkpointer.setup()
 
-            app.state.checkpointer = checkpointer
-            app.state.root_path = r"C:\Users\Rashm\OneDrive\Desktop\path"
+            # app.state.checkpointer = checkpointer
+            # app.state.root_path = r"C:\Users\Rashm\OneDrive\Desktop\path"
 
             app.state.agent = await init_create_agent(checkpointer)
             yield
@@ -39,14 +39,22 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 Base.metadata.create_all(bind=engine)
-# app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+from fastapi.staticfiles import StaticFiles
 
+app.mount(
+    "/uploads",
+    StaticFiles(directory="uploads"),
+    name="uploads",
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
+        "http://127.0.0.1:3000",
         "http://localhost:5173",
+        "http://127.0.0.1:5173",
         "http://192.168.1.105:8000",
+        "null",
     ],
     allow_credentials=True,
     allow_methods=["*"],

@@ -21,12 +21,13 @@ from langchain.agents.middleware import (
 )
 from schemas.models.lang.chatModels import summarizeModel
 import base64
+from schemas.tools import rag_graph
 from schemas.tools.graph import execute_python_task
 from schemas.tools.index import internet_search, read_image
+from schemas.tools.file_tools import edit_file, list_files, read_file, write_file
 from schemas.tools.mcp.index import main
 from schemas.tools.structured_output.so_output import extract_directory
 import json
-
 
 system_prompt = """
 You are a helpful assistant.
@@ -36,27 +37,38 @@ For computer and filesystem tasks, use the available tools instead of guessing.
 TOOLS:
 
 1. execute_python_task
-Use this tool for ANY computer-related task that can be performed with Python, including:
-- Getting system information/configuration
-- Finding files or folders
-- Reading file contents
-- Creating, editing, or deleting files
-- Searching directories
-- Checking installed software or packages
-- Running commands/scripts
+Use this tool for computer-related tasks that cannot be done with the file tools, including:
+- Getting system information
+- Checking installed software/packages
+- Running commands or scripts
 - Inspecting the user's computer
-- Any other task involving the user's local computer
 
-2. read_image
-Use this tool to read or analyze an image.
+FILE TOOLS
+Use these for all file and folder operations. Prefer them over execute_python_task.
+Paths may be absolute or relative to the workspace root.
 
-IMAGE TASKS:
-- If the image path is unknown, first use execute_python_task to find the image.
-- Once the path is known, use read_image with the exact path.
-- Never guess an image location or its contents.
-- Base your answer on the actual tool results.
+2. read_file
+Read a text file. Args: path.
 
-For computer tasks, prefer execute_python_task over explaining how the user could do it manually.
+3. write_file
+Create a new file or overwrite an existing one. Args: path, content.
+
+4. edit_file
+Replace an exact string inside a file. Args: path, old_string, new_string, replace_all.
+
+5. list_files
+List files and folders in a directory. Args: directory, pattern, recursive.
+
+6. read_image
+If you unable to read the image only then use read_image tool. other wise never call this image at all.
+IMAGE RULES:
+- If the user provides an image directly in the conversation/request, analyze it yourself. Do NOT use read_image.
+- If the user provides an image file path, use read_image with the exact path.
+- If the image path is unknown, use list_files to find it first.
+- Never guess image paths or image contents.
+- Base image-path analysis on the actual read_image result.
+
+For computer tasks, prefer using tools over explaining manual steps.
 """
 
 
@@ -158,7 +170,16 @@ async def init_create_agent(checkpointer):
     )
     mcp_tools = await client.get_tools()
 
-    tools = mcp_tools + [internet_search, execute_python_task, read_image]
+    tools = mcp_tools + [
+        internet_search,
+        execute_python_task,
+        read_image,
+        read_file,
+        write_file,
+        edit_file,
+        list_files,
+        rag_graph.rag_tool,
+    ]
     agent = create_agent(
         model=local,
         tools=tools,

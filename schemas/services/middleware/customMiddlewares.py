@@ -77,9 +77,13 @@ class RecursiveGlobMiddleware(AgentMiddleware):
                 args["pattern"] = f"**/{pattern}"
                 request = request.override(tool_call={**call, "args": args})
         result = await handler(request)
-        if call["name"] in {"glob_search", "grep_search"} and isinstance(result, ToolMessage):
+        if call["name"] in {"glob_search", "grep_search"} and isinstance(
+            result, ToolMessage
+        ):
             if isinstance(result.content, str):
-                result = result.model_copy(update={"content": self._cap_result(result.content)})
+                result = result.model_copy(
+                    update={"content": self._cap_result(result.content)}
+                )
         return result
 
 
@@ -96,23 +100,59 @@ def welcome_back_message(state: AgentState, runtime: Runtime) -> dict[str, Any] 
     return None
 
 
+
 @before_model
 def generate_chat_title(state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
     messages = state.get("messages", [])
-    lastMessage = messages[len(messages) - 1].content
-    if len(messages) <= 1:
-        writer = runtime.stream_writer
-        writer({"message": "Generating title to the chat"})
-        response = chat(
-            model="qwen2.5-coder:3b",
-            messages=[
-                {
-                    "role": "user",
-                    "content": f"generate creative short title for the chat based on message. no preamble:  The message: {lastMessage}",
-                }
-            ],
+
+    # only generate on the very first user turn
+    if not messages or len(messages) > 1:
+        return None
+
+    content = messages[-1].content
+
+    # content is a list when the first message carries an attachment
+    # (text block + image_url with a big base64 payload) -> keep the text only
+    if isinstance(content, list):
+        text = " ".join(
+            block.get("text", "")
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
         )
-        writer({"title": response.message.content})
+    else:
+        text = content or ""
+
+    text = text.strip()[:500]
+
+    if not text:
+        return None
+
+    writer = runtime.stream_writer
+
+    response = chat(
+        model="qwen2.5-coder:3b",
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    "Generate a short chat title of at most 4 words from the "
+                    "message below. Reply with the title only - no quotes, no "
+                    f"preamble.\n\nMessage: {text}"
+                ),
+            }
+        ],
+        options={"num_predict": 24, "temperature": 0.2},
+    )
+
+    title = (response.message.content or "").strip()
+    title = title.splitlines()[0].strip() if title else ""
+    if title.lower().startswith("title:"):
+        title = title.split(":", 1)[1].strip()
+    title = " ".join(title.strip("\"'").split()[:6])
+
+    if title:
+        print(f"TITLE {title}")
+        writer({"title": title})
 
     return None
 

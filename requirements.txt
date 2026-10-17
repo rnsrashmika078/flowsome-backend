@@ -12,3 +12,9 @@ psycopg2-binary
 langchain-mcp-adapters
 fastmcp
 tavily-python
+python-multipart
+langchain-postgres
+chromadb
+sentence-transformers
+pypdf
+langchain-text-splitters
