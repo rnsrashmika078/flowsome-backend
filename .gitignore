@@ -23,6 +23,10 @@ dist/
 # database
 *.db
 *.sqlite3
+chroma_db/
+
+# runtime uploads
+uploads/
 
 # test / coverage
 .coverage
