@@ -1,25 +1,30 @@
+import json
+import shutil
 from pathlib import Path
-from fastapi import Request, APIRouter, Depends, UploadFile, File
-from langchain_core.messages import HumanMessage, ToolMessage
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
+from langchain_core.messages import HumanMessage
 from langchain_protocol import Command
 from pydantic import BaseModel
-import json
 from sqlalchemy.orm import Session
-import requests
-from models.thread import Thread
-from utils.helper import ImageEncode, clean_object, clean_object_v2, init_create_agent
-from langgraph.config import get_stream_writer
-from database.index import get_db
 
+from agent.serialization import clean_for_stream, encode_image_url
+from database.models import Thread
+from database.session import get_db
 
 router = APIRouter()
+
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
+
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
 @router.post("/api/stream")
 async def stream_response(request: Request):
     try:
-        # writer = get_stream_writer();
         body = await request.json()
         payload = body.get("input", body)
         thread_id = payload.get("threadId", "1235")
@@ -27,54 +32,37 @@ async def stream_response(request: Request):
         messages = payload.get("messages", [])
 
         file_content = None
-        text_content = None
-        encoded_img = None
+        text_content = ""
 
-        for i in messages:
-            if i == "None":
+        for message in messages:
+            if message == "None":
                 continue
-            elif len(messages) > 1:
+            if len(messages) > 1:
                 file_content = messages[1].get("content", "")
                 text_content = messages[0].get("content", "")
             else:
                 text_content = messages[0].get("content", "")
 
-        # thread configurations
         config = {
-            "configurable": {
-                "thread_id": thread_id,
-            },
+            "configurable": {"thread_id": thread_id},
             "recursion_limit": 25,
         }
 
-        #  image encode
-        encoded_img = ImageEncode(file_content, requests)
-
-        # human in the loop
         if interrupt_response:
             input_data = Command(
                 resume={"decisions": interrupt_response.get("decisions")}
             )
         else:
-            with_attachment = [
-                {"type": "text", "text": text_content},
-                {
-                    "type": "image_url",
-                    "image_url": {"url": encoded_img},
-                    "raw": file_content,
-                },
-            ]
-
-            without_attachment = [
-                {"type": "text", "text": text_content},
-            ]
-            content = with_attachment if file_content else without_attachment
-
-            input_data = {
-                "messages": [
-                    HumanMessage(content=content),
-                ]
-            }
+            content = [{"type": "text", "text": text_content}]
+            if file_content:
+                content.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": encode_image_url(file_content)},
+                        "raw": file_content,
+                    }
+                )
+            input_data = {"messages": [HumanMessage(content=content)]}
 
         agent = request.app.state.agent
 
@@ -91,13 +79,11 @@ async def stream_response(request: Request):
                         "custom",
                     ],
                 ):
-                    formatted_data = clean_object_v2(data)
                     yield f"event: {stream_mode}\n"
-                    yield f"data: {json.dumps(formatted_data)}\n\n"
-
-            except Exception as e:
-                yield f"event: error\n"
-                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                    yield f"data: {json.dumps(clean_for_stream(data))}\n\n"
+            except Exception as exc:
+                yield "event: error\n"
+                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
 
         return StreamingResponse(
             generate(),
@@ -108,21 +94,14 @@ async def stream_response(request: Request):
             },
         )
 
-    except Exception as err:
-        print(str(err))
-        return {"error": str(err)}, 500
-
-
-class History(BaseModel):
-    thread: str
+    except Exception as exc:
+        return {"error": str(exc)}, 500
 
 
 @router.get("/api/threads/history/{thread}")
-async def getHistory(request: Request, thread: str):
+async def get_history(request: Request, thread: str):
     config = {"configurable": {"thread_id": thread}}
-    agent = request.app.state.agent
-
-    state = await agent.aget_state(config)
+    state = await request.app.state.agent.aget_state(config)
 
     if not state:
         return {"messages": []}
@@ -136,74 +115,55 @@ class ThreadBody(BaseModel):
 
 
 @router.post("/api/threads/add_thread")
-async def addThread(
-    thread: ThreadBody, request: Request, db: Session = Depends(get_db)
-):
+async def add_thread(thread: ThreadBody, db: Session = Depends(get_db)):
     try:
-        new_thread = Thread(thread_id=thread.thread_id, thread_name=thread.thread_name)
+        new_thread = Thread(
+            thread_id=thread.thread_id,
+            thread_name=thread.thread_name,
+        )
         db.add(new_thread)
         db.commit()
         db.refresh(new_thread)
         return {"thread": new_thread}
-    except Exception as e:
+    except Exception as exc:
         db.rollback()
-        print(str(e))
+        return {"error": str(exc)}, 500
 
 
 @router.get("/api/threads/get_threads")
-async def getThreads(db: Session = Depends(get_db)):
-    try:
-        threads = db.query(Thread).all()
-        print(f"threads {threads}")
-        return threads
-    except Exception as e:
-        db.rollback()
-        print(str(e))
+async def get_threads(db: Session = Depends(get_db)):
+    return db.query(Thread).all()
 
 
 @router.delete("/api/thread/{thread}")
-async def delete_thread(request: Request, thread: str, db: Session = Depends(get_db)):
-    agent = request.app.state.agent
-    await agent.checkpointer.adelete_thread(thread)
-    found_thread = db.query(Thread).filter(Thread.thread_id == thread).first()
+async def delete_thread(
+    request: Request,
+    thread: str,
+    db: Session = Depends(get_db),
+):
+    await request.app.state.agent.checkpointer.adelete_thread(thread)
 
+    found_thread = db.query(Thread).filter(Thread.thread_id == thread).first()
     if found_thread:
         db.delete(found_thread)
         db.commit()
+
     return {"message": "Thread was deleted!"}
-
-
-@router.post("/select-folder")
-async def select_folder(request: Request):
-    request.app.state.root_path = r"C:\Users\Rashm\OneDrive\Desktop\path2"
-
-    # request.app.state.agent = init_create_agent(request.app.state.checkpointer, app.state.root_path)
-    return {"root_path": request.app.state.root_path}
-
-
-
-
-from uuid import uuid4
-from pathlib import Path
-from fastapi import HTTPException
-import shutil
-
-UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(exist_ok=True)
-
-ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 
 
 @router.post("/api/upload")
 async def upload_image(request: Request, file: UploadFile = File(...)):
-    ext = Path(file.filename).suffix.lower()
-    if ext not in ALLOWED_EXT:
+    extension = Path(file.filename or "").suffix.lower()
+
+    if extension not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail="Only image files are allowed")
 
-    filename = f"{uuid4().hex}{ext}"
+    filename = f"{uuid4().hex}{extension}"
     file_path = UPLOAD_DIR / filename
 
     with file_path.open("wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    return {"secure_url": str(request.base_url).rstrip("/") + f"/uploads/{filename}"}
+    return {
+        "secure_url": str(request.base_url).rstrip("/") + f"/uploads/{filename}"
+    }

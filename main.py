@@ -1,51 +1,33 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from langchain.agents import create_agent
-from langchain_mcp_adapters.client import MultiServerMCPClient
-from api.routes import router
-import json
+from fastapi.staticfiles import StaticFiles
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from core.config import settings
-import dotenv
 
-# from fastapi.staticfiles import StaticFiles
-from database.index import Base
-from utils.helper import init_create_agent
-from database.index import engine
+import database.models  # noqa: F401 - registers the Thread table
+from agent.factory import build_agent
+from api.routes import router
+from config import settings
+from database.session import Base, engine
 
-dotenv.load_dotenv()
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    try:
-        async with AsyncPostgresSaver.from_conn_string(
-            settings.DATABASE_URL
-        ) as checkpointer:
-
-            await checkpointer.setup()
-
-            # app.state.checkpointer = checkpointer
-            # app.state.root_path = r"C:\Users\Rashm\OneDrive\Desktop\path"
-
-            app.state.agent = await init_create_agent(checkpointer)
-            yield
-    except Exception as e:
-        print(f"error: {str(e)}")
-        raise
+    async with AsyncPostgresSaver.from_conn_string(settings.DATABASE_URL) as checkpointer:
+        await checkpointer.setup()
+        app.state.agent = await build_agent(checkpointer)
+        yield
 
 
 app = FastAPI(lifespan=lifespan)
 Base.metadata.create_all(bind=engine)
-from fastapi.staticfiles import StaticFiles
 
-app.mount(
-    "/uploads",
-    StaticFiles(directory="uploads"),
-    name="uploads",
-)
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
