@@ -2,11 +2,10 @@ from typing import Any
 
 from langchain.agents.middleware import AgentState, before_model
 from langgraph.runtime import Runtime
-from ollama import chat
+from ollama import Client
+from agent.models import OLLAMA_BASE_URL, SUMMARY_MODEL
 
-from agent.models import SUMMARY_MODEL
-
-
+summary_client = Client(host=OLLAMA_BASE_URL)
 @before_model
 def generate_chat_title(state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
     messages = state.get("messages", [])
@@ -30,7 +29,8 @@ def generate_chat_title(state: AgentState, runtime: Runtime) -> dict[str, Any] |
     if not text:
         return None
 
-    response = chat(
+    response = summary_client.chat(
+        
         model=SUMMARY_MODEL,
         messages=[
             {

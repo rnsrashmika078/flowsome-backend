@@ -31,17 +31,8 @@ async def stream_response(request: Request):
         interrupt_response = payload.get("interruptResponse")
         messages = payload.get("messages", [])
 
-        file_content = None
-        text_content = ""
-
-        for message in messages:
-            if message == "None":
-                continue
-            if len(messages) > 1:
-                file_content = messages[1].get("content", "")
-                text_content = messages[0].get("content", "")
-            else:
-                text_content = messages[0].get("content", "")
+        text_content = messages[0].get("content", "") if messages else ""
+        file_content = messages[1].get("content", "") if len(messages) > 1 else None
 
         config = {
             "configurable": {"thread_id": thread_id},
@@ -55,13 +46,26 @@ async def stream_response(request: Request):
         else:
             content = [{"type": "text", "text": text_content}]
             if file_content:
-                content.append(
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": encode_image_url(file_content)},
-                        "raw": file_content,
-                    }
-                )
+                if str(file_content).lower().split("?")[0].endswith(".pdf"):
+                    content.append(
+                        {
+                            "type": "text",
+                            "text": (
+                                f"The user attached a PDF document at: {file_content}\n"
+                                "Use the rag_tool to answer the user's request about "
+                                "this document. Pass this exact URL as document_path "
+                                "and the user's request as the question."
+                            ),
+                        }
+                    )
+                else:
+                    content.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": encode_image_url(file_content)},
+                            "raw": file_content,
+                        }
+                    )
             input_data = {"messages": [HumanMessage(content=content)]}
 
         agent = request.app.state.agent

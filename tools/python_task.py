@@ -11,14 +11,14 @@ from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
-from agent.models import CHAT_MODEL, CODING_MODEL
+from agent.models import CHAT_MODEL, CODING_MODEL, OLLAMA_BASE_URL
 
 MAX_RESULT_CHARS = 2000
 MAX_SCRIPTS_IN_PROMPT = 2
 SCRIPT_TIMEOUT_SECONDS = 30
 DEFAULT_MAX_ATTEMPTS = 5
 
-llm = ChatOllama(model=CODING_MODEL, reasoning=False, temperature=0.4)
+llm = ChatOllama(model=CODING_MODEL, reasoning=False, temperature=0.4, base_url=OLLAMA_BASE_URL)
 
 
 class PythonTaskState(TypedDict):
@@ -101,7 +101,11 @@ def _execute_script(state: PythonTaskState) -> dict:
 
     try:
         result = subprocess.run(
-            [sys.executable, "-c", state["python_script"]],
+            [
+                sys.executable,
+                "-c",
+                state["python_script"],
+            ],  # red flag -> this use current application python interpreter ( environment )
             capture_output=True,
             text=True,
             timeout=SCRIPT_TIMEOUT_SECONDS,
@@ -116,9 +120,9 @@ def _execute_script(state: PythonTaskState) -> dict:
                 "attempt": attempt,
             }
 
-        writer({"message": "Script completed."})
+        writer({"message": ""})
         output = result.stdout
-        match = re.search(r"[A-Za-z]:\\[^\r\n]*", output)
+        match = re.search(r"[A-Za-z]:\\[^\r\n]*", output)  # red flag
         path = match.group(0).strip() if match else ""
 
         return {
@@ -140,9 +144,12 @@ def _evaluate_result(state: PythonTaskState) -> str:
     writer({"message": "Evaluating Python script..."})
 
     if state["status"] == "green":
+        writer({"message": ""})
         return "success"
     if state.get("attempt", 0) >= state.get("max_attempt", 1):
+        writer({"message": ""})
         return "exhausted"
+    writer({"message": ""})
     return "retry"
 
 

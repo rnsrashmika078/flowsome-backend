@@ -1,9 +1,11 @@
 from pathlib import Path
 
 from langchain.tools import ToolRuntime, tool
-from ollama import chat
+from ollama import Client
 
-from agent.models import CHAT_MODEL
+from agent.models import CHAT_MODEL, OLLAMA_BASE_URL
+
+client = Client(host=OLLAMA_BASE_URL)
 
 
 @tool("read_image")
@@ -26,7 +28,7 @@ def read_image(task: str, path: str, tool_runtime: ToolRuntime) -> str:
         image_bytes = image_path.read_bytes()
         writer({"message": f"Reading image: {image_path.name}"})
 
-        response = chat(
+        response = client.chat(
             model=CHAT_MODEL,
             messages=[
                 {
